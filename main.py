@@ -1,12 +1,12 @@
-import json
-import os
-import sys
+from os import path, listdir, system
 from functools import reduce
 from multiprocessing import Pool
 
+import json
+
 from PIL import Image
 
-wallpaper_dir = 'D:\\Wallpaper'
+wallpaper_dir = 'D:/Wallpaper'
 
 
 def phash(img):
@@ -26,38 +26,51 @@ def hamming_distance(a, b):
     return bin(a ^ b).count('1')
 
 
-def get_phash(file_name):
-    return file_name, phash(file_name)
+def get_file_info(file_name):
+    return file_name, phash(file_name), path.getsize(file_name)
 
 
-def init_index(path):
+def init_index(img_dir):
     """ 初始化壁纸文件索引 """
-    included_extensions = ['jpg', 'jpeg', 'bmp', 'png', 'gif']
-    file_names = [f'{path}\\{fn}' for fn in os.listdir(path) if any(fn.endswith(ext) for ext in included_extensions)]
+    global ts
+    data_path = f'{path.dirname(__file__)}/wallpaper_data.json'
+    included_extensions = ['jpg', 'jpeg', 'bmp', 'png']
+    file_names = [f'{img_dir}/{fn}' for fn in listdir(img_dir) if any(fn.endswith(ext) for ext in included_extensions)]
 
+    # 读取现有索引,并过滤已索引过的文件
+    if path.exists(data_path):
+        with open(f'{path.dirname(__file__)}/wallpaper_data.json', 'r', encoding='utf-8') as f:
+            wallpaper_data = json.loads(f.read())
+    else:
+        wallpaper_data = []
+    w_size = {}
+    for item in wallpaper_data:
+        w_size[item[0]] = item[2]
+    file_names = list(filter(lambda fn: w_size.get(fn) is None or w_size.get(fn) != path.getsize(fn), file_names))
+    if len(file_names) == 0:
+        return
+
+    # 多线程索引文件
     pool = Pool()
-    wallpaper_data = pool.map(get_phash, file_names)
+    wallpaper_data += pool.map(get_file_info, file_names)
     pool.close()
     pool.join()
 
-    with open(f'{os.path.dirname(__file__)}\\wallpaper_data.json', 'w', encoding='utf-8') as f:
+    with open(f'{path.dirname(__file__)}/wallpaper_data.json', 'w', encoding='utf-8') as f:
         f.write(json.dumps(wallpaper_data, ensure_ascii=False, indent=2))
 
 
 def query_wallpaper():
     """ 查找并打开当前使用壁纸 """
-    path = '%APPDATA%\\Microsoft\\Windows\\Themes\\TranscodedWallpaper'
-    h = phash(Image.open(os.path.expandvars(path)))
-    with open(f'{os.path.dirname(__file__)}\\wallpaper_data.json', 'r', encoding='utf-8') as f:
+    h = phash(Image.open(path.expandvars('%APPDATA%/Microsoft/Windows/Themes/TranscodedWallpaper')))
+    with open(f'{path.dirname(__file__)}/wallpaper_data.json', 'r', encoding='utf-8') as f:
         wallpaper_data = json.load(f)
     for f in wallpaper_data:
         if hamming_distance(h, f[1]) <= 5:
             print(hamming_distance(h, f[1]), f, h)
-            os.system(f'start "" "{f[0]}"')
+            system(f'start "" "{f[0]}"')
 
 
 if __name__ == '__main__':
-    if 'init' in sys.argv[1:]:
-        init_index(wallpaper_dir)
-    else:
-        query_wallpaper()
+    init_index(wallpaper_dir)
+    query_wallpaper()
